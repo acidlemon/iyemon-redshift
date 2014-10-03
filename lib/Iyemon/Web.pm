@@ -41,23 +41,27 @@ get '/search' => sub {
 
     my $start_date = $c->req->param("start_date") or $c->halt(400);
     my $end_date   = $c->req->param("end_date" )  || DateTime->now(time_zone => time_zone());
+    my $page  = $c->req->param("page");
+    my $limit = 100 * $page;
 
     my $strp = DateTime::Format::Strptime->new(
         pattern   => '%Y-%m-%dT%H:%M',
         time_zone => time_zone(),
     );
-    push @where, (
-        time => [
-            "-and",
-            { ">=" => $strp->parse_datetime($start_date)->epoch },
-            { "<=" => $strp->parse_datetime($end_date)->epoch },
-        ],
-    );
 
-    my $page  = $c->req->param("page");
-    my $limit = 100 * $page;
+    my $inner_select = sql_maker->new_select;
+    for (qw/uid time type json/) {
+        $inner_select->add_select($_);
+    }
+    $inner_select->add_from("action_logs2");
+    $inner_select->add_where( time => {
+        between => [
+            $strp->parse_datetime($start_date)->epoch,
+            $strp->parse_datetime($end_date)->epoch
+        ]
+    });
 
-    my ($sql, @binds) = sql_maker->select("action_logs",
+    my ($sql, @binds) = sql_maker->select([$inner_select],
         ["uid", "time", "type", "json"],
         \@where,
         {order_by => "time", limit => $limit, offset => $limit - 100},
